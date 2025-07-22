@@ -20,15 +20,21 @@ REGION_ROUTING = "europe"   # For match/v5 endpoints (matches & timelines)
 PLATFORM_ROUTING = "euw1"      # For summoner-v4 endpoints (summoner info)
 
 
-def get_puuid(summoner_name: str) -> str:
-    url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/summoner/v4/summoners/by-name/{summoner_name}"
+def get_summoner_info(summoner_name: str, tagline: str = None) -> dict:
+    """Fetch basic info for a given summoner name (and optional tagline for Riot ID)."""
+    if tagline:
+        # Use Riot ID endpoint (for cross-region Riot IDs, like 'MyName#EUW')
+        url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{summoner_name}/{tagline}"
+    else:
+        # Use classic summoner name endpoint (platform-specific)
+        url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/summoner/v4/summoners/by-name/{summoner_name}"
+
     res = requests.get(url, headers=HEADERS)
 
     if res.status_code == 200:
-        return res.json()["puuid"]
+        return res.json()
     else:
-        raise Exception(f"Failed to get PUUID for {summoner_name}: {res.status_code} - {res.text}")
-
+        raise Exception(f"Failed to fetch summoner info: {res.status_code} - {res.text}")
 
 def get_recent_match_ids(puuid: str, count: int = 10, queue: int = 420) -> list:
     """
@@ -44,37 +50,21 @@ def get_recent_match_ids(puuid: str, count: int = 10, queue: int = 420) -> list:
         raise Exception(f"Failed to get match IDs: {res.status_code} - {res.text}")
 
 
-def sync_recent_ranked_matches(user_dir: Path, summoner_name: str, count: int = 10, delay: float = 1.2) -> list:
+import requests
+
+def get_match_data(match_id: str) -> dict:
     """
-    Downloads match details for the last `count` ranked games and stores them in /matches/.
-    Skips already downloaded matches.
-    Returns list of match IDs synced.
+    Fetch match data JSON from Riot API for a single match ID.
+    Returns the match JSON data as a dictionary.
+    Raises an exception if the API call fails.
     """
-    match_dir = user_dir / "matches"
-    match_dir.mkdir(parents=True, exist_ok=True)
+    url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}"
+    res = requests.get(url, headers=HEADERS)
+    if res.status_code == 200:
+        return res.json()
+    else:
+        raise Exception(f"Failed to fetch match data for {match_id}: {res.status_code} {res.text}")
 
-    puuid = get_puuid(summoner_name)
-    match_ids = get_recent_match_ids(puuid, count=count)
-
-    for match_id in match_ids:
-        match_path = match_dir / f"{match_id}.json"
-        if match_path.exists():
-            print(f"[SKIP] Match already exists: {match_id}")
-            continue
-
-        url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}"
-        res = requests.get(url, headers=HEADERS)
-
-        if res.status_code == 200:
-            with open(match_path, "w") as f:
-                json.dump(res.json(), f, indent=2)
-            print(f"[✔] Downloaded match: {match_id}")
-        else:
-            print(f"[ERROR] Failed to get match {match_id}: {res.status_code} - {res.text}")
-
-        time.sleep(delay)  # Respect rate limits
-
-    return match_ids
 
 
 def sync_timelines(user_dir: Path, match_ids: list, delay: float = 1.2):
@@ -105,15 +95,59 @@ def sync_timelines(user_dir: Path, match_ids: list, delay: float = 1.2):
 
         time.sleep(delay)  # Rate limiting
 
-"""
-# Example of usage if run as a script:
-if __name__ == "__main__":
-    user = "your_summoner_name"  # update this
-    user_dir = Path("data") / "users" / user
+def get_champion_mastery(summoner_id: str) -> list:
+    url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{summoner_id}"
+    res = requests.get(url, headers=HEADERS)
+    if res.status_code == 200:
+        return res.json()
+    else:
+        raise Exception(f"Champion mastery request failed: {res.status_code} - {res.text}")
 
-    print("Syncing recent ranked matches...")
-    matches = sync_recent_ranked_matches(user_dir, user, count=10)
+def get_ranked_info(summoner_id: str) -> list:
+    url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/league/v4/entries/by-summoner/{summoner_id}"
+    res = requests.get(url, headers=HEADERS)
+    if res.status_code == 200:
+        return res.json()
+    else:
+        raise Exception(f"Ranked info request failed: {res.status_code} - {res.text}")
 
-    print("\nSyncing timelines...")
-    sync_timelines(user_dir, matches)
-"""
+def get_latest_dd_version() -> str:
+    url = "https://ddragon.leagueoflegends.com/api/versions.json"
+    res = requests.get(url)
+    if res.status_code == 200:
+        return res.json()[0]
+    else:
+        raise Exception("Failed to fetch Data Dragon version list.")
+
+
+def get_champion_data(version: str) -> dict:
+    url = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
+    res = requests.get(url)
+    if res.status_code == 200:
+        return res.json()["data"]
+    else:
+        raise Exception("Failed to fetch champion data.")
+    
+def sync_user_profile(summoner_name: str):
+    summoner_data = get_summoner_info(summoner_name)
+    summoner_id = summoner_data["id"]
+    
+    # Champion Mastery
+    mastery_data = get_champion_mastery(summoner_id)
+    with open(f"data/users/{summoner_name}/champion_mastery.json", "w") as f:
+        json.dump(mastery_data, f, indent=2)
+
+    # Ranked Info
+    ranked_data = get_ranked_info(summoner_id)
+    with open(f"data/users/{summoner_name}/ranked_info.json", "w") as f:
+        json.dump(ranked_data, f, indent=2)
+
+    # Static Champion Data
+    version = get_latest_dd_version()
+    champ_data = get_champion_data(version)
+    with open("data/static/champions.json", "w") as f:
+        json.dump(champ_data, f, indent=2)
+
+    print(f"User profile data synced for {summoner_name}")
+
+
