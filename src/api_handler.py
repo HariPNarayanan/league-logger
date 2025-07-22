@@ -66,11 +66,10 @@ def get_match_data(match_id: str) -> dict:
         raise Exception(f"Failed to fetch match data for {match_id}: {res.status_code} {res.text}")
 
 
-
-def sync_timelines(user_dir: Path, match_ids: list, delay: float = 1.2):
+def get_timeline_data(user_dir: Path, match_ids: list, delay: float = 1.2) -> None:
     """
-    Downloads timeline data for given match IDs and stores them in /timelines/.
-    Skips already downloaded timelines.
+    Download and save timeline JSONs for match_ids in user_dir/timelines.
+    Skips already existing files.
     """
     timeline_dir = user_dir / "timelines"
     timeline_dir.mkdir(parents=True, exist_ok=True)
@@ -78,22 +77,20 @@ def sync_timelines(user_dir: Path, match_ids: list, delay: float = 1.2):
     for match_id in match_ids:
         timeline_path = timeline_dir / f"{match_id}.json"
         if timeline_path.exists():
-            print(f"[SKIP] Timeline exists for {match_id}")
+            print(f"[SKIP] Timeline exists: {match_id}")
             continue
 
         url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
-        try:
-            response = requests.get(url, headers=HEADERS)
-            if response.status_code == 200:
-                with open(timeline_path, "w") as f:
-                    json.dump(response.json(), f, indent=2)
-                print(f"[✔] Downloaded timeline for {match_id}")
-            else:
-                print(f"[ERROR {response.status_code}] Failed to fetch timeline {match_id}: {response.text}")
-        except Exception as e:
-            print(f"[EXCEPTION] {match_id}: {e}")
+        res = requests.get(url, headers=HEADERS)
 
-        time.sleep(delay)  # Rate limiting
+        if res.status_code == 200:
+            with open(timeline_path, "w") as f:
+                json.dump(res.json(), f, indent=2)
+            print(f"[✔] Downloaded timeline: {match_id}")
+        else:
+            print(f"[ERROR {res.status_code}] Failed to get timeline {match_id}: {res.text}")
+
+        time.sleep(delay)
 
 def get_champion_mastery(summoner_id: str) -> list:
     url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{summoner_id}"
