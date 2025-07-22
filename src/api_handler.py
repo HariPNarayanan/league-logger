@@ -20,26 +20,54 @@ REGION_ROUTING = "europe"   # For match/v5 endpoints (matches & timelines)
 PLATFORM_ROUTING = "euw1"      # For summoner-v4 endpoints (summoner info)
 
 
-def get_summoner_info(summoner_name: str, tagline: str = None) -> dict:
-    """Fetch basic info for a given summoner name (and optional tagline for Riot ID)."""
-    if tagline:
-        # Use Riot ID endpoint (for cross-region Riot IDs, like 'MyName#EUW')
-        url = f"https://europe.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{summoner_name}/{tagline}"
-    else:
-        # Use classic summoner name endpoint (platform-specific)
-        url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/summoner/v4/summoners/by-name/{summoner_name}"
+import requests
+import os
 
-    res = requests.get(url, headers=HEADERS)
+def get_summoner_info(riot_id: str):
+    """
+    Fetch summoner info using Riot ID format: 'Name#Tag'
+    Uses the Account-V1 API (global).
+    """
+    if "#" not in riot_id:
+        raise ValueError("Riot ID must include a tag, e.g. 'RainbowThenga#EUW'")
 
-    if res.status_code == 200:
-        return res.json()
-    else:
+    game_name, tag_line = riot_id.split("#")
+
+    headers = {"X-Riot-Token": os.getenv("RIOT_API_KEY")}
+    region = os.getenv("REGION_ROUTING", "europe")
+
+    url = f"https://{region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+    res = requests.get(url, headers=headers)
+
+    if res.status_code != 200:
         raise Exception(f"Failed to fetch summoner info: {res.status_code} - {res.text}")
 
-def get_recent_match_ids(puuid: str, count: int = 10, queue: int = 420) -> list:
+    return res.json()  # Contains puuid, gameName, tagLine
+
+
+def get_recent_match_ids(
+    puuid: str,
+    count: int = 20,
+    queue: int = 420,
+    my_puuid: str = None,
+    my_summoner_name: str = None,
+    requested_summoner_name: str = None,
+    max_count: int = 100,
+) -> list:
     """
-    queue=420 filters for ranked Solo/Duo
+    queue=420 filters for ranked Solo/Duo.
+
+    Automatically overrides count for your own account if puuid or summoner name matches.
     """
+    override = False
+    if my_puuid and puuid == my_puuid:
+        override = True
+    elif my_summoner_name and requested_summoner_name and requested_summoner_name.lower() == my_summoner_name.lower():
+        override = True
+
+    if override:
+        count = max_count
+
     url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids"
     params = {"start": 0, "count": count, "queue": queue}
     res = requests.get(url, headers=HEADERS, params=params)
@@ -48,6 +76,7 @@ def get_recent_match_ids(puuid: str, count: int = 10, queue: int = 420) -> list:
         return res.json()
     else:
         raise Exception(f"Failed to get match IDs: {res.status_code} - {res.text}")
+    
 
 
 import requests
@@ -66,10 +95,11 @@ def get_match_data(match_id: str) -> dict:
         raise Exception(f"Failed to fetch match data for {match_id}: {res.status_code} {res.text}")
 
 
-def get_timeline_data(user_dir: Path, match_ids: list, delay: float = 1.2) -> None:
+
+def get_timeline_data(match_ids: list, user_dir: Path, delay: float = 1.2):
     """
-    Download and save timeline JSONs for match_ids in user_dir/timelines.
-    Skips already existing files.
+    Downloads and stores timeline data for each match ID in /timelines/ folder under user_dir.
+    Skips matches already downloaded.
     """
     timeline_dir = user_dir / "timelines"
     timeline_dir.mkdir(parents=True, exist_ok=True)
@@ -77,20 +107,22 @@ def get_timeline_data(user_dir: Path, match_ids: list, delay: float = 1.2) -> No
     for match_id in match_ids:
         timeline_path = timeline_dir / f"{match_id}.json"
         if timeline_path.exists():
-            print(f"[SKIP] Timeline exists: {match_id}")
+            print(f"[SKIP] Timeline already exists: {match_id}")
             continue
 
         url = f"https://{REGION_ROUTING}.api.riotgames.com/lol/match/v5/matches/{match_id}/timeline"
-        res = requests.get(url, headers=HEADERS)
+        try:
+            response = requests.get(url, headers=HEADERS)
+            if response.status_code == 200:
+                with open(timeline_path, "w") as f:
+                    json.dump(response.json(), f, indent=2)
+                print(f"[✔] Timeline saved: {match_id}")
+            else:
+                print(f"[ERROR {response.status_code}] Could not fetch {match_id}: {response.text}")
+        except Exception as e:
+            print(f"[EXCEPTION] {match_id}: {e}")
 
-        if res.status_code == 200:
-            with open(timeline_path, "w") as f:
-                json.dump(res.json(), f, indent=2)
-            print(f"[✔] Downloaded timeline: {match_id}")
-        else:
-            print(f"[ERROR {res.status_code}] Failed to get timeline {match_id}: {res.text}")
-
-        time.sleep(delay)
+        time.sleep(delay)  # basic rate limiting
 
 def get_champion_mastery(summoner_id: str) -> list:
     url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{summoner_id}"
