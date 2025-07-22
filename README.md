@@ -24,8 +24,9 @@ This project syncs match and timeline data for a specified summoner, saving deta
 
 2. Create a .env file in the repo root with your Riot API key and region routing:
 
-RIOT_API_KEY=your_api_key_here
-REGION_ROUTING=europe
+   RIOT_API_KEY=your_api_key_here
+
+   REGION_ROUTING=europe
 
 3. Install dependencies:
 
@@ -39,25 +40,25 @@ Run syncing script (e.g. from Jupyter notebook or directly):
 
 ## Usage
 
-    Modify parameters like champion_name, start_time, and end_time to filter sync data.
+Modify parameters like champion_name, start_time, and end_time to filter sync data.
 
-    JSON data is saved inside the data/users folder by default.
+JSON data is saved inside the data/users folder by default.
 
-    Use provided analysis notebooks or scripts to explore your saved data.
+Use provided analysis notebooks or scripts to explore your saved data.
 
 ## Notes
 
-    The repo dynamically finds its root directory, so scripts work seamlessly from notebooks or command line.
+The repo dynamically finds its root directory, so scripts work seamlessly from notebooks or command line.
 
-    Make sure to respect Riot’s API rate limits.
+Make sure to respect Riot’s API rate limits.
 
-    The data/ folder is large and should be added to .gitignore to avoid pushing to GitHub.
+The data/ folder is large and should be added to .gitignore to avoid pushing to GitHub.
 
 ## Future Work
 
-    Add support for Data Dragon assets and champion mastery data.
+Add support for Data Dragon assets and champion mastery data.
 
-    Expand analysis scripts for deeper insights.
+Expand analysis scripts for deeper insights.
 
-    Improve caching and error handling.
+Improve caching and error handling.
 
