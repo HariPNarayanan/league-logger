@@ -44,7 +44,6 @@ def get_summoner_info(riot_id: str):
 
     return res.json()  # Contains puuid, gameName, tagLine
 
-
 def get_recent_match_ids(
     puuid: str,
     count: int = 20,
@@ -124,8 +123,8 @@ def get_timeline_data(match_ids: list, user_dir: Path, delay: float = 1.2):
 
         time.sleep(delay)  # basic rate limiting
 
-def get_champion_mastery(summoner_id: str) -> list:
-    url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-summoner/{summoner_id}"
+def get_champion_mastery(puuid: str) -> list:
+    url = f"https://{PLATFORM_ROUTING}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}"
     res = requests.get(url, headers=HEADERS)
     if res.status_code == 200:
         return res.json()

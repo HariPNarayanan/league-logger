@@ -10,7 +10,8 @@ from api_handler import (
     get_match_data,
     get_timeline_data,
     get_champion_data,
-    get_champion_mastery
+    get_champion_mastery,
+    get_dd_version_for_patch
 )
 
 MY_SUMMONER = "RainbowThenga#420"
@@ -117,7 +118,7 @@ def sync_user_data(
         if not mastery_path.exists():
             print("📊 Fetching champion mastery...")
             try:
-                mastery_data = get_champion_mastery(summoner_info["id"])
+                mastery_data = get_champion_mastery(puuid)  # pass puuid directly
                 with open(mastery_path, "w") as f:
                     json.dump(mastery_data, f, indent=2)
                 print("✔ Champion mastery saved.")
