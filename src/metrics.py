@@ -1,18 +1,12 @@
-import json
-from pathlib import Path
-from typing import Union, Tuple, List
-import pandas as pd
-# Optional: if you're displaying timestamps or need to handle durations
 import datetime
-
+from utils import (
+    load_match_and_timeline,
+    get_player_by_name,
+    get_teams,
+    get_recent_match_files
+)
 from pathlib import Path
 import json
-
-from pathlib import Path
-import json  # Adjust if in same file
-
-import json
-from pathlib import Path
 from collections import Counter
 from api_handler import get_summoner_info  # Update this if the import path differs
 
@@ -44,30 +38,6 @@ def champ_counts(summoner_riot_id: str, repo_root: Path) -> Counter:
 
     return Counter(champions)
 
-
-def load_match_data(match_id: str, user_dir: Path) -> dict:
-    match_path = user_dir / "matches" / f"{match_id}.json"
-    with open(match_path, "r") as f:
-        return json.load(f)
-
-def get_participant_data(match_data: dict, summoner_name: str) -> tuple:
-    participants = match_data["info"]["participants"]
-    your_data = next((p for p in participants if p["riotIdGameName"].lower() == summoner_name.lower()), None)
-
-    if not your_data:
-        raise ValueError("Summoner not found in match data.")
-
-    # Group by teamId
-    team1 = [p for p in participants if p["teamId"] == 100]
-    team2 = [p for p in participants if p["teamId"] == 200]
-
-    return your_data, team1, team2
-
-def load_timeline_data(match_id: str, user_dir: Path) -> dict:
-    path = user_dir / "timelines" / f"{match_id}.json"
-    with open(path, "r") as f:
-        return json.load(f)
-
 def get_cs_at_15(timeline: dict, participant_id: int) -> int:
     total_cs = 0
     for frame in timeline["info"]["frames"][:16]:  # Minute 0 to 15 inclusive
@@ -85,19 +55,38 @@ def get_damage_ranking(participants: list, your_participant: dict) -> tuple:
 
     return your_participant["totalDamageDealtToChampions"], rank
 
-def summarize_match_for_notes(match_id: str, summoner_name: str, user_dir: Union[str, Path]) -> str:
+def summarize_recent_matchups(
+    summoner_name: str,
+    user_data_path: Path,
+    num_matches: int = 15
+):
+    if not (user_data_path / "matches").exists():
+        raise FileNotFoundError(f"No match data found at {user_data_path / 'matches'}")
+
+    match_files = get_recent_match_files(user_data_path, num_matches)  # replaces glob + sort
+
+    print(f"🧾 Last {len(match_files)} matchups for {summoner_name}:\n")
+    for file in match_files:
+        match_id = file.stem
+        try:
+            summary = summarize_match_for_notes(match_id, summoner_name, user_data_path)
+            print(f"{match_id}: {summary.splitlines()[9]}")
+        except Exception as e:
+            print(f"{match_id}: [Error] {e}")
+
+
+def summarize_match_for_notes(match_id: str, summoner_name: str, user_dir: str | Path) -> str:
     user_dir = Path(user_dir)
-    match = load_match_data(match_id, user_dir)
-    timeline = load_timeline_data(match_id, user_dir)
-    
-    your_data, team1, team2 = get_participant_data(match, summoner_name)
+    match, timeline = load_match_and_timeline(match_id, user_dir)
+
+    your_data = get_player_by_name(match, summoner_name)        # replaces get_participant_data
+    team1, team2 = get_teams(match)                             # replaces manual team split
+
     cs_at_15 = get_cs_at_15(timeline, your_data["participantId"])
     total_minutes = match["info"]["gameDuration"] / 60
     cs_per_min = your_data["totalMinionsKilled"] / total_minutes
-
     dmg, dmg_rank = get_damage_ranking(match["info"]["participants"], your_data)
 
-    # Lane partners and opponents
     def find_lane_roles(team):
         bot = next((p for p in team if p["teamPosition"] == "BOTTOM"), None)
         support = next((p for p in team if p["teamPosition"] == "UTILITY"), None)
@@ -109,7 +98,7 @@ def summarize_match_for_notes(match_id: str, summoner_name: str, user_dir: Union
     your_bot, your_supp = find_lane_roles(your_team)
     enemy_bot, enemy_supp = find_lane_roles(enemy_team)
 
-    win_tag = f"win-yes" if your_data["win"] else f"win-no"
+    win_tag = "win-yes" if your_data["win"] else "win-no"
 
     tags = [
         "#leagueoflegends",
@@ -120,7 +109,6 @@ def summarize_match_for_notes(match_id: str, summoner_name: str, user_dir: Union
         f"#opp-champ-{enemy_supp['championName']}",
         f"#{win_tag}"
     ]
-    tags_line = "Tags: " + " ".join(tags)
 
     text = f"""\
 ## Match Summary: {match_id}
@@ -139,47 +127,7 @@ Bot Lane:
 Result: {"Win" if your_data["win"] else "Loss"}
 Game Duration: {int(total_minutes)} min
 
-{tags_line}
+Tags: {" ".join(tags)}
 
 """
     return text
-
-def get_match_time(file):
-    try:
-        with file.open() as f:
-            data = json.load(f)
-            return data.get("info", {}).get("gameStartTimestamp", 0)
-    except Exception:
-        return 0  # fallback if file is corrupt or missing field
-
-def summarize_recent_matchups(
-    summoner_name: str,
-    user_data_path: Path,
-    num_matches: int = 15
-):
-    match_dir = user_data_path / "matches"
-    if not match_dir.exists():
-        raise FileNotFoundError(f"No match data found at {match_dir}")
-
-    match_files = list(match_dir.glob("*.json"))
-
-    def get_match_time(file):
-        try:
-            with file.open() as f:
-                data = json.load(f)
-                return data.get("info", {}).get("gameCreation", 0)
-        except Exception:
-            return 0  # fallback if file is corrupt or missing field
-
-    match_files.sort(key=get_match_time, reverse=True)
-    match_files = match_files[:num_matches]
-
-    print(f"🧾 Last {len(match_files)} matchups for {summoner_name}:\n")
-    for file in match_files:
-        match_id = file.stem
-        try:
-            summary = summarize_match_for_notes(match_id, summoner_name, user_data_path)
-            print(f"{match_id}: {summary.splitlines()[9]}")  # Print just the matchup line
-        except Exception as e:
-            print(f"{match_id}: [Error] {e}")
-

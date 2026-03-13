@@ -3,59 +3,49 @@ from pathlib import Path
 from collections import defaultdict
 from datetime import datetime
 import api_handler
+# -*- coding: utf-8 -*-
 
-import json
-from pathlib import Path
-from collections import defaultdict
-from datetime import datetime
-import api_handler
+from utils import (
+    load_match_and_timeline,
+    get_player_by_name,
+    get_teams,
+    get_recent_match_files
+)
+
+from utils import get_recent_match_files, load_match_and_timeline, get_player_by_puuid, matches_champion_filter
 
 def cs_at_15_for_recent_matches(
     summoner_riot_id: str,
     base_data_path: Path,
     num_matches: int = 10,
-    champion_filter: str = None
+    champion_filter: str = None,
+    puuid: str = None,                                          # accept puuid to avoid redundant API call
 ):
-    puuid = api_handler.get_summoner_info(summoner_riot_id)["puuid"]
-    user_dir = base_data_path / summoner_riot_id.replace("#", "_")
-    match_dir = user_dir / "matches"
-    timeline_dir = user_dir / "timelines"
+    if puuid is None:
+        puuid = api_handler.get_summoner_info(summoner_riot_id)["puuid"]
 
-    def get_match_time(file):
-        try:
-            with file.open() as f:
-                data = json.load(f)
-                return data.get("info", {}).get("gameCreation", 0)
-        except Exception:
-            return 0
+    user_dir = base_data_path / re.sub(r'[^a-zA-Z0-9]', '_', summoner_riot_id)
 
-    # Step 1: Get most recent matches by gameCreation, not file mtime
-    match_files = list(match_dir.glob("*.json"))
-    match_files.sort(key=get_match_time, reverse=True)
-    match_files = match_files[:num_matches]
+    match_files = get_recent_match_files(user_dir, num_matches)  # replaces manual glob + sort + slice
 
     results = []
 
     for match_file in match_files:
         match_id = match_file.stem
-        timeline_path = timeline_dir / f"{match_id}.json"
 
-        if not timeline_path.exists():
+        try:
+            match_data, timeline_data = load_match_and_timeline(match_id, user_dir)  # replaces manual open + existence check
+        except FileNotFoundError:
             print(f"⚠ Timeline not found for {match_id}")
             continue
 
-        with open(match_file) as f:
-            match_data = json.load(f)
-        with open(timeline_path) as f:
-            timeline_data = json.load(f)
-
-        participants = match_data["info"]["participants"]
-        player = next((p for p in participants if p["puuid"] == puuid), None)
-        if not player:
+        try:
+            player = get_player_by_puuid(match_data, puuid)     # replaces manual next() + None check
+        except ValueError:
             print(f"❌ Could not find player in {match_id}")
             continue
 
-        if champion_filter and player["championName"].lower() != champion_filter.lower():
+        if not matches_champion_filter(player, champion_filter): # replaces inline lower() comparison
             continue
 
         participant_id = player["participantId"]
@@ -78,7 +68,6 @@ def cs_at_15_for_recent_matches(
             "cs_per_min": round(cs_per_min, 2),
         })
 
-    # Step 2: Output results
     print(f"\n🎯 CS@15 for last {len(results)} matches for {summoner_riot_id}:")
     for res in results:
         print(f"{res['match_id']} | {res['champion']:>10} | CS@15: {res['cs_at_15']:>3} | CS/m: {res['cs_per_min']:.2f}")
@@ -159,20 +148,16 @@ def extract_cs_timeline_from_files(match_id: str, puuid: str, user_data_path: Pa
     return cs_deltas
 
 
-import matplotlib.pyplot as plt
-import json
-
-import matplotlib.pyplot as plt
 from collections import defaultdict
 import numpy as np
-import json
 
 def plot_cs_timelines_by_bins(
     user_data_path: Path,
     summoner_name: str,
     num_matches: int = 20,
     bin_size: int = 5,
-    filter_champion: str = None
+    filter_champion: str = None,
+    puuid: str = None,
 ):
     from api_handler import get_summoner_info
     puuid = get_summoner_info(summoner_name)["puuid"]
