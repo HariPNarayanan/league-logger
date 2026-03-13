@@ -142,8 +142,9 @@ def sync_user_data(
         for patch in required_patches - existing_dd_versions:
             print(f"🌐 Fetching DDragon data for patch {patch}...")
             try:
-                dd_data = get_champion_data(patch)
-                patch_dir = dd_root / patch
+                full_version = get_dd_version_for_patch(patch)
+                dd_data = get_champion_data(full_version)
+                patch_dir = dd_root / patch  # still store it under the short patch name for consistency
                 patch_dir.mkdir(parents=True, exist_ok=True)
                 with open(patch_dir / "champion.json", "w") as f:
                     json.dump(dd_data, f, indent=2)

@@ -148,6 +148,17 @@ def get_latest_dd_version() -> str:
     else:
         raise Exception("Failed to fetch Data Dragon version list.")
 
+def get_dd_version_for_patch(patch: str) -> str:
+    """Maps a short patch string like '14.10' to the full DDragon version like '14.10.1'."""
+    url = "https://ddragon.leagueoflegends.com/api/versions.json"
+    res = requests.get(url)
+    if res.status_code != 200:
+        raise Exception("Failed to fetch Data Dragon version list.")
+    all_versions = res.json()
+    for v in all_versions:
+        if v.startswith(patch + "."):
+            return v
+    raise Exception(f"No DDragon version found for patch {patch}")
 
 def get_champion_data(version: str) -> dict:
     url = f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
