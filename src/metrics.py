@@ -100,14 +100,17 @@ def summarize_match_for_notes(match_id: str, summoner_name: str, user_dir: str |
 
     win_tag = "win-yes" if your_data["win"] else "win-no"
 
+    my_position = your_data["teamPosition"]  # "BOTTOM" or "UTILITY"
+    role_tag = "#adc" if my_position == "BOTTOM" else "#support"
+
     tags = [
         "#leagueoflegends",
-        "#adc",
-        f"#champ-{your_bot['championName']}",
-        f"#ally-champ-{your_supp['championName']}",
+        role_tag,
+        f"#champ-{your_data['championName']}",                      # always your actual champ
+        f"#ally-champ-{your_supp['championName'] if my_position == 'BOTTOM' else your_bot['championName']}",
         f"#opp-champ-{enemy_bot['championName']}",
         f"#opp-champ-{enemy_supp['championName']}",
-        f"#{win_tag}"
+        f"#{win_tag}",
     ]
 
     text = f"""\
